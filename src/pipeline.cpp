@@ -62,11 +62,11 @@ void Pipeline::ConstructPipeline()
     /* Set up the pipeline */
     /* we add all elements into the pipeline */
     gst_bin_add_many (GST_BIN (pipeline), pgie,
-        nvvidconv, nvosd, sink, NULL);
+        nvvidconv, nvosd, NULL);
     /* we link the elements together
     * nvstreammux -> nvinfer -> nvtiler -> nvvidconv -> nvosd -> video-renderer */
     if (!gst_element_link_many (streammux, pgie,
-            nvvidconv, nvosd, sink, NULL)) {
+            nvvidconv, nvosd, NULL)) {
         g_printerr ("Elements could not be linked. Exiting.\n");
         exit(-1);
     }

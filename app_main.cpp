@@ -144,7 +144,7 @@ start_rtsp_streaming (guint rtsp_port_num, guint updsink_port_num)
   char port_num_Str[64] = { 0 };
   char *encoder_name;
 
-  encoder_name = (char*)"H264";
+  encoder_name = "H264";
 
   sprintf (udpsrc_pipeline,
       "( udpsrc name=pay0 port=%d caps=\"application/x-rtp, media=video, "
@@ -181,99 +181,107 @@ start_rtsp_streaming (guint rtsp_port_num, guint updsink_port_num)
 }
 
 static GstElement *
-create_udpsink_bin ()
+create_udpsink_bin (unsigned int i)
 {
-  NvDsSinkBinSubBin * bin;
   GstCaps *caps = NULL;
   gboolean ret = FALSE;
   gchar elem_name[50];
   gchar encode_name[50];
   gchar rtppay_name[50];
+  GstElement *bin = NULL;
+  GstElement *queue = NULL;
+  GstElement *transform = NULL;
+  GstElement *cap_filter = NULL;
+  GstElement *enc_caps_filter = NULL;
+  GstElement *encoder = NULL;
+  GstElement *codecparse = NULL;
+  GstElement *sink = NULL;
+  GstElement *rtppay = NULL;
 
   //guint rtsp_port_num = g_rtsp_port_num++;
   uid++;
 
-  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin%d", uid);
-  bin->bin = gst_bin_new (elem_name);
-  if (!bin->bin) {
+  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin%d", i);
+  bin = gst_bin_new (elem_name);
+  if (!bin) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", elem_name);
     goto done;
   }
 
-  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_queue%d", uid);
-  bin->queue = gst_element_factory_make (NVDS_ELEM_QUEUE, elem_name);
-  if (!bin->queue) {
+  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_queue%d", i);
+  queue = gst_element_factory_make (NVDS_ELEM_QUEUE, elem_name);
+  if (!queue) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", elem_name);
     goto done;
   }
 
-  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_transform%d", uid);
-  bin->transform = gst_element_factory_make (NVDS_ELEM_VIDEO_CONV, elem_name);
-  if (!bin->transform) {
+  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_transform%d", i);
+  transform = gst_element_factory_make (NVDS_ELEM_VIDEO_CONV, elem_name);
+  if (!transform) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", elem_name);
     goto done;
   }
 
-  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_cap_filter%d", uid);
-  bin->cap_filter = gst_element_factory_make (NVDS_ELEM_CAPS_FILTER, elem_name);
-  if (!bin->cap_filter) {
+  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_cap_filter%d", i);
+  cap_filter = gst_element_factory_make (NVDS_ELEM_CAPS_FILTER, elem_name);
+  if (!cap_filter) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", elem_name);
     goto done;
   }
 
   caps = gst_caps_from_string ("video/x-raw(memory:NVMM), format=I420");
 
-  g_object_set (G_OBJECT (bin->cap_filter), "caps", caps, NULL);
+  g_object_set (G_OBJECT (cap_filter), "caps", caps, NULL);
 
-  g_snprintf (encode_name, sizeof (encode_name), "sink_sub_bin_encoder%d", uid);
-  g_snprintf (rtppay_name, sizeof (rtppay_name), "sink_sub_bin_rtppay%d", uid);
+  g_snprintf (encode_name, sizeof (encode_name), "sink_sub_bin_encoder%d", i);
+  g_snprintf (rtppay_name, sizeof (rtppay_name), "sink_sub_bin_rtppay%d", i);
 
-  bin->codecparse = gst_element_factory_make ("h264parse", "h264-parser");
-  bin->rtppay = gst_element_factory_make ("rtph264pay", rtppay_name);
-  bin->encoder = gst_element_factory_make (NVDS_ELEM_ENC_H264_HW, encode_name);
+  codecparse = gst_element_factory_make ("h264parse", "h264-parser");
+  rtppay = gst_element_factory_make ("rtph264pay", rtppay_name);
+  encoder = gst_element_factory_make (NVDS_ELEM_ENC_H264_HW, encode_name);
 
-  if (!bin->encoder) {
+  if (!encoder) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", encode_name);
     goto done;
   }
 
-  if (!bin->rtppay) {
+  if (!rtppay) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", rtppay_name);
     goto done;
   }
 
-  g_object_set (G_OBJECT (bin->encoder), "bitrate", 4096000, NULL);
-//   g_object_set (G_OBJECT (bin->encoder), "profile", config->profile, NULL);
-  g_object_set (G_OBJECT (bin->encoder), "iframeinterval", 10, NULL);
+  g_object_set (G_OBJECT (encoder), "bitrate", 4096000, NULL);
+//   g_object_set (G_OBJECT (encoder), "profile", config->profile, NULL);
+  g_object_set (G_OBJECT (encoder), "iframeinterval", 10, NULL);
 
-//   g_object_set (G_OBJECT (bin->transform), "gpu-id", 0, NULL);
+//   g_object_set (G_OBJECT (transform), "gpu-id", 0, NULL);
 
-  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_udpsink%d", uid);
-  bin->sink = gst_element_factory_make ("udpsink", elem_name);
-  if (!bin->sink) {
+  g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_udpsink%d", i);
+  sink = gst_element_factory_make ("udpsink", elem_name);
+  if (!sink) {
     NVGSTDS_ERR_MSG_V ("Failed to create '%s'", elem_name);
     goto done;
   }
 
-  g_object_set (G_OBJECT (bin->sink), "host", "224.224.255.255", "port",
-      5000+uid, "async", FALSE, "sync", 0, NULL);
+  g_object_set (G_OBJECT (sink), "host", "224.224.255.255", "port",
+      5000+i, "async", FALSE, "sync", 0, NULL);
 
-  gst_bin_add_many (GST_BIN (bin->bin),
-      bin->queue, bin->cap_filter, bin->transform,
-      bin->encoder, bin->codecparse, bin->rtppay, bin->sink, NULL);
+  gst_bin_add_many (GST_BIN (bin),
+      queue, cap_filter, transform,
+      encoder, codecparse, rtppay, sink, NULL);
 
-  NVGSTDS_LINK_ELEMENT (bin->queue, bin->transform);
-  NVGSTDS_LINK_ELEMENT (bin->transform, bin->cap_filter);
-  NVGSTDS_LINK_ELEMENT (bin->cap_filter, bin->encoder);
-  NVGSTDS_LINK_ELEMENT (bin->encoder, bin->codecparse);
-  NVGSTDS_LINK_ELEMENT (bin->codecparse, bin->rtppay);
-  NVGSTDS_LINK_ELEMENT (bin->rtppay, bin->sink);
+  NVGSTDS_LINK_ELEMENT (queue, transform);
+  NVGSTDS_LINK_ELEMENT (transform, cap_filter);
+  NVGSTDS_LINK_ELEMENT (cap_filter, encoder);
+  NVGSTDS_LINK_ELEMENT (encoder, codecparse);
+  NVGSTDS_LINK_ELEMENT (codecparse, rtppay);
+  NVGSTDS_LINK_ELEMENT (rtppay, sink);
 
-  NVGSTDS_BIN_ADD_GHOST_PAD (bin->bin, bin->queue, "sink");
+  NVGSTDS_BIN_ADD_GHOST_PAD (bin, queue, "sink");
 
   ret = TRUE;
 
-  ret = start_rtsp_streaming (8554+uid, 5000+uid);
+  ret = start_rtsp_streaming (8554+i, 5000+i);
   if (ret != TRUE) {
     g_print ("%s: start_rtsp_straming function failed\n", __func__);
   }
@@ -285,7 +293,7 @@ done:
   if (!ret) {
     NVGSTDS_ERR_MSG_V ("%s failed", __func__);
   }
-  return bin->bin;
+  return bin;
 }
 
 int
@@ -350,7 +358,7 @@ main (int argc, char *argv[])
         gst_object_unref (sinkpad);
 
         GstElement *rtspbin;
-        rtspbin = create_udpsink_bin();
+        rtspbin = create_udpsink_bin(i);
         gst_bin_add (GST_BIN (detector.pipeline), rtspbin);
         gst_element_link(detector.nvosd, rtspbin);
     }

@@ -8,7 +8,8 @@
 #include <iostream>
 #include "gstnvdsmeta.h"
 
-#define PGIE_CONFIG_FILE "../configs/pgie_detector.txt"
+//#define PGIE_CONFIG_FILE "../configs/pgie_detector.txt"
+#define PGIE_CONFIG_FILE "../configs/pgie_yoloV3.txt"
 #define PGIE_CLASS_ID_PERSON 2
 #define MAX_DISPLAY_LEN 64
 

@@ -18,6 +18,44 @@ static GstRTSPServer *server [MAX_SINK_BINS];
 static guint server_count = 0;
 static GMutex server_cnt_lock;
 
+bool sendKafkamessage(char * msg){
+  std::cout<<"Class: "<<msg<<std::endl;
+  return true;
+}
+
+/* osd_sink_pad_buffer_probe  will extract metadata received on OSD sink pad
+ * and update params for drawing rectangle, object information etc. */
+
+static GstPadProbeReturn
+osd_sink_pad_buffer_probe (GstPad * pad, GstPadProbeInfo * info,
+    gpointer u_data)
+{
+    GstBuffer *buf = (GstBuffer *) info->data;
+    guint num_rects = 0; 
+    NvDsObjectMeta *obj_meta = NULL;
+    guint vehicle_count = 0;
+    guint person_count = 0;
+    NvDsMetaList * l_frame = NULL;
+    NvDsMetaList * l_obj = NULL;
+    NvDsDisplayMeta *display_meta = NULL;
+
+    NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (buf);
+
+    for (l_frame = batch_meta->frame_meta_list; l_frame != NULL;
+      l_frame = l_frame->next) {
+        NvDsFrameMeta *frame_meta = (NvDsFrameMeta *) (l_frame->data);
+        int offset = 0;
+        for (l_obj = frame_meta->obj_meta_list; l_obj != NULL;
+                l_obj = l_obj->next) {
+            obj_meta = (NvDsObjectMeta *) (l_obj->data);
+            if (obj_meta->class_id == PGIE_CLASS_ID_WEAPON) {
+              sendKafkamessage("weapon");
+            }
+        }
+    }
+    return GST_PAD_PROBE_OK;
+}
+
 static gboolean
 bus_call (GstBus * bus, GstMessage * msg, gpointer data)
 {
@@ -362,6 +400,14 @@ main (int argc, char *argv[])
         gst_bin_add (GST_BIN (detector.pipeline), rtspbin);
         gst_element_link(detector.nvosd, rtspbin);
     }
+  GstPad *osd_sink_pad = NULL;
+  osd_sink_pad = gst_element_get_static_pad (detector.nvosd, "sink");
+  if (!osd_sink_pad)
+    g_print ("Unable to get sink pad\n");
+  else
+    gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
+        osd_sink_pad_buffer_probe, NULL, NULL);
+  gst_object_unref (osd_sink_pad);
 
     // Set the pipeline to "playing" state
     gst_element_set_state(detector.pipeline, GST_STATE_PLAYING);

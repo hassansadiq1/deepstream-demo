@@ -10,7 +10,7 @@
 
 //#define PGIE_CONFIG_FILE "../configs/pgie_detector.txt"
 #define PGIE_CONFIG_FILE "../configs/pgie_yoloV3.txt"
-#define PGIE_CLASS_ID_PERSON 2
+#define PGIE_CLASS_ID_WEAPON 1
 #define MAX_DISPLAY_LEN 64
 
 #define GST_CAPS_FEATURES_NVMM "memory:NVMM"

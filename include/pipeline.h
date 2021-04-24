@@ -17,6 +17,7 @@
 #define MUXER_OUTPUT_WIDTH 1280
 #define MUXER_OUTPUT_HEIGHT 720
 #define MUXER_BATCH_TIMEOUT_USEC 40000
+#define MAX_TIME_STAMP_LEN 32
 
 using namespace std;
 

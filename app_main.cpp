@@ -6,7 +6,11 @@
 #include <fstream>
 #include <sstream>
 #include <gst/rtsp-server/rtsp-server.h>
+#include <signal.h>
+#include <librdkafka/rdkafka.h>
 
+#include "common.h"
+#include "json.h"
 #include "deepstream_common.h"
 #include "deepstream_sinks.h"
 #include "gstnvdsmeta.h"
@@ -17,10 +21,91 @@ static guint uid = 0;
 static GstRTSPServer *server [MAX_SINK_BINS];
 static guint server_count = 0;
 static GMutex server_cnt_lock;
+static string metadata;
+const char *topic;
+char meta_time[MAX_TIME_STAMP_LEN];
 
-bool sendKafkamessage(char * msg){
-  std::cout<<"Class: "<<msg<<std::endl;
-  return true;
+rd_kafka_t *rk;
+void sendMessage(const char *topic, string message){
+        int msgcnt = 1, delivery_counter = 0;
+        char errstr[512];
+
+        /* Produce messages */
+        if (run) {
+                const char *user = "alice";
+                char json[64];
+                rd_kafka_resp_err_t err;
+
+                snprintf(json, sizeof(json),
+                         "{ \"class\": %s }", message.c_str());
+                std::cout<<json<<std::endl;
+                /* Asynchronous produce */
+                err = rd_kafka_producev(
+                        rk,
+                        RD_KAFKA_V_TOPIC(topic),
+                        RD_KAFKA_V_KEY(user, strlen(user)),
+                        RD_KAFKA_V_VALUE(json, strlen(json)),
+                        /* producev() will make a copy of the message
+                         * value (the key is always copied), so we
+                         * can reuse the same json buffer on the
+                         * next iteration. */
+                        RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
+                        RD_KAFKA_V_OPAQUE(&delivery_counter),
+                        RD_KAFKA_V_END);
+                if (err) {
+                        fprintf(stderr, "Produce failed: %s\n",
+                                rd_kafka_err2str(err));
+                }
+        }
+
+        if (run) {
+                rd_kafka_flush(rk, 15*1000);
+        }        
+}
+
+/**
+ * @brief Create producer and produce JSON messages.
+ *
+ * Assumes ownership of \p conf.
+ *
+ * @returns 0 on success or -1 on error.
+ */
+static int run_producer (const char *topic, int msgcnt,
+                         rd_kafka_conf_t *conf) {
+
+        char errstr[512];
+
+        /* Create producer.
+         * A successful call assumes ownership of \p conf. */
+        rk = rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
+        if (!rk) {
+                fprintf(stderr, "Failed to create producer: %s\n", errstr);
+                rd_kafka_conf_destroy(conf);
+                return -1;
+        }
+
+        /* Create the topic. */
+        if (create_topic(rk, topic, 1) == -1) {
+                rd_kafka_destroy(rk);
+                return -1;
+        }
+        return 0;
+}
+
+static void generate_ts_rfc3339 (char *buf, int buf_size)
+{
+  time_t tloc;
+  struct tm tm_log;
+  struct timespec ts;
+  char strmsec[6]; //.nnnZ\0
+
+  clock_gettime(CLOCK_REALTIME,  &ts);
+  memcpy(&tloc, (void *)(&ts.tv_sec), sizeof(time_t));
+  gmtime_r(&tloc, &tm_log);
+  strftime(buf, buf_size,"%Y-%m-%dT%H:%M:%S", &tm_log);
+  int ms = ts.tv_nsec/1000000;
+  g_snprintf(strmsec, sizeof(strmsec),".%.3dZ", ms);
+  strncat(buf, strmsec, buf_size);
 }
 
 /* osd_sink_pad_buffer_probe  will extract metadata received on OSD sink pad
@@ -49,7 +134,10 @@ osd_sink_pad_buffer_probe (GstPad * pad, GstPadProbeInfo * info,
                 l_obj = l_obj->next) {
             obj_meta = (NvDsObjectMeta *) (l_obj->data);
             if (obj_meta->class_id == PGIE_CLASS_ID_WEAPON) {
-              sendKafkamessage("weapon");
+              generate_ts_rfc3339(meta_time, MAX_TIME_STAMP_LEN);
+              string curr_time = meta_time;
+              metadata = "weapon_" + curr_time;
+              sendMessage(topic, metadata.c_str());
             }
         }
     }
@@ -289,10 +377,10 @@ create_udpsink_bin (unsigned int i)
   }
 
   g_object_set (G_OBJECT (encoder), "bitrate", 4096000, NULL);
-//   g_object_set (G_OBJECT (encoder), "profile", config->profile, NULL);
+  // g_object_set (G_OBJECT (encoder), "profile", config->profile, NULL);
   g_object_set (G_OBJECT (encoder), "iframeinterval", 10, NULL);
 
-//   g_object_set (G_OBJECT (transform), "gpu-id", 0, NULL);
+  // g_object_set (G_OBJECT (transform), "gpu-id", 0, NULL);
 
   g_snprintf (elem_name, sizeof (elem_name), "sink_sub_bin_udpsink%d", i);
   sink = gst_element_factory_make ("udpsink", elem_name);
@@ -337,6 +425,23 @@ done:
 int
 main (int argc, char *argv[])
 {
+    const char *config_file;
+    rd_kafka_conf_t *conf;
+
+    topic = argv[2];
+    config_file = argv[3];
+
+    if (argc != 4) {
+            fprintf(stderr, "Usage: %s <stream-source> <topic> <config-file>\n", argv[0]);
+            exit(1);
+    }
+
+    if (!(conf = read_config(config_file)))
+            return 1;
+
+    if (run_producer(topic, 10, conf) == -1)
+            return 1;
+
     /* Standard GStreamer initialization */
     gst_init (&argc, &argv);
 
@@ -419,5 +524,8 @@ main (int argc, char *argv[])
     gst_object_unref (GST_OBJECT (detector.pipeline));
     g_source_remove (detector.bus_watch_id);
     g_main_loop_unref (detector.loop);
+
+    /* Destroy the producer instance. */
+    rd_kafka_destroy(rk);
     return 0;
 }

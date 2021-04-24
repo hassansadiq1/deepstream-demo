@@ -10,6 +10,8 @@ set(CMAKE_CONFIGURATION_TYPES "Debug" CACHE STRING "" FORCE)
 include_directories(${PROJECT_SOURCE_DIR}/include)
 file(GLOB SOURCES "${PROJECT_SOURCE_DIR}/app_main.cpp"
                   "${PROJECT_SOURCE_DIR}/src/pipeline.cpp"
+                  "${PROJECT_SOURCE_DIR}/src/json.cpp"
+                  "${PROJECT_SOURCE_DIR}/src/common.cpp"
                   )
 
 find_package(PkgConfig)
@@ -35,6 +37,8 @@ link_libraries(nvdsgst_meta)
 link_libraries(nvds_meta)
 link_libraries(nvdsgst_helper)
 link_libraries(nvds_utils)
+link_libraries(rdkafka++)
 
 add_executable(app_main ${SOURCES})
 target_link_libraries(app_main ${libs_collection})
+target_link_libraries(app_main  PUBLIC rdkafka++ ssl crypto pthread rdkafka)
